@@ -43,6 +43,55 @@ enum ChainPositions
     HighCut
 };
 
+using Coefficients = Filter::CoefficientsPtr;
+void updateCoefficients(Coefficients& old, const Coefficients& replacements);
+
+Coefficients makePeakFilter(const ChainSettings& chainSettings, double sampleRate);
+
+template<typename ChainType, typename CoefficientType>
+void updateCutFilter(ChainType& cutFilter, const CoefficientType& cutCoefficients, const Slope& cutSlope)
+{
+    cutFilter.template setBypassed<0>(true);
+    cutFilter.template setBypassed<1>(true);
+    cutFilter.template setBypassed<2>(true);
+    cutFilter.template setBypassed<3>(true);
+
+    switch (cutSlope)
+    {
+    case Slope_48:
+    {
+        *cutFilter.get<3>().coefficients = *cutCoefficients[0];
+        cutFilter.setBypassed<3>(false);
+    }
+
+    case Slope_36:
+    {
+        *cutFilter.get<2>().coefficients = *cutCoefficients[0];
+        cutFilter.setBypassed<2>(false);
+    }
+    case Slope_24:
+    {
+        *cutFilter.get<1>().coefficients = *cutCoefficients[0];
+        cutFilter.setBypassed<1>(false);
+    }
+    case Slope_12:
+    {
+        *cutFilter.get<0>().coefficients = *cutCoefficients[0];
+        cutFilter.setBypassed<0>(false);
+    }
+    }
+}
+
+inline auto makeLowCutFilter(const ChainSettings& chainSettings, double sampleRate)
+{
+    return juce::dsp::FilterDesign<float>::designIIRHighpassHighOrderButterworthMethod(chainSettings.lowCutFreq, sampleRate, 2 * (1 + chainSettings.lowCutSlope));
+}
+
+inline auto makeHighCutFilter(const ChainSettings& chainSettings, double sampleRate)
+{
+    return juce::dsp::FilterDesign<float>::designIIRLowpassHighOrderButterworthMethod(chainSettings.highCutFreq, sampleRate, 2 * (1 + chainSettings.highCutSlope));
+}
+
 //==============================================================================
 /**
 */
@@ -96,46 +145,9 @@ private:
     MonoChain leftChain, rightChain;
 
     void updatePeakFilter(const ChainSettings& chainSettings);
-    using Coefficients = Filter::CoefficientsPtr;
-    static void updateCoefficients(Coefficients& old, const Coefficients& replacements);
 
-    template<typename ChainType, typename CoefficientType>
-    void updateCutFilter(ChainType& cutFilter, const CoefficientType& cutCoefficients,
-        const Slope& cutSlope);
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Vsttutorialv2AudioProcessor)
 };
 
-template<typename ChainType, typename CoefficientType>
-inline void Vsttutorialv2AudioProcessor::updateCutFilter(ChainType& cutFilter, const CoefficientType& cutCoefficients, const Slope& cutSlope)
-{
-    cutFilter.template setBypassed<0>(true);
-    cutFilter.template setBypassed<1>(true);
-    cutFilter.template setBypassed<2>(true);
-    cutFilter.template setBypassed<3>(true);
 
-    switch (cutSlope)
-    {
-        case Slope_48:
-        {
-            *cutFilter.get<3>().coefficients = *cutCoefficients[0];
-            cutFilter.setBypassed<3>(false);
-        }
-
-        case Slope_36:
-        {
-            *cutFilter.get<2>().coefficients = *cutCoefficients[0];
-            cutFilter.setBypassed<2>(false);
-        }
-        case Slope_24:
-        {
-            *cutFilter.get<1>().coefficients = *cutCoefficients[0];
-            cutFilter.setBypassed<1>(false);
-        }
-        case Slope_12:
-        {
-            *cutFilter.get<0>().coefficients = *cutCoefficients[0];
-            cutFilter.setBypassed<0>(false);
-        }
-    }
-}
