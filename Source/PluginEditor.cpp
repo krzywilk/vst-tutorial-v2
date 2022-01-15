@@ -17,6 +17,7 @@ ResponseCurveComponent::ResponseCurveComponent(Vsttutorialv2AudioProcessor& p) :
     {
         param->addListener(this);
     }
+    updateChain();
     startTimerHz(60);
 }
 
@@ -36,17 +37,10 @@ void ResponseCurveComponent::parameterValueChanged(int parameterIndex, float new
 
 void ResponseCurveComponent::timerCallback()
 {
+    
     if (parametersChanged.compareAndSetBool(false, true))
     {
-        auto chainSettings = getChainSettings(audioProcessor.apvts);
-        auto peakCoefficients = makePeakFilter(chainSettings, audioProcessor.getSampleRate());
-        updateCoefficients(monoChain.get<ChainPositions::Peak>().coefficients, peakCoefficients);
-
-        auto lowCutCoefficients = makeLowCutFilter(chainSettings, audioProcessor.getSampleRate());
-        auto highCutCoefficients = makeHighCutFilter(chainSettings, audioProcessor.getSampleRate());
-
-        updateCutFilter(monoChain.get<ChainPositions::LowCut>(), lowCutCoefficients, chainSettings.lowCutSlope);
-        updateCutFilter(monoChain.get<ChainPositions::HighCut>(), highCutCoefficients, chainSettings.highCutSlope);
+        updateChain();
         repaint();
     }
 }
@@ -57,7 +51,8 @@ void ResponseCurveComponent::paint(juce::Graphics& g)
     // (Our component is opaque, so we must completely fill the background with a solid colour)
     g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
 
-    auto responseArea = getLocalBounds();
+    auto responseArea = getAnalysisArea();
+    g.drawImage(background, getLocalBounds().toFloat());
 
 
     auto w = responseArea.getWidth();
@@ -110,10 +105,154 @@ void ResponseCurveComponent::paint(juce::Graphics& g)
         responseCurve.lineTo(responseArea.getX() + i, map(mags[i]));
 
     g.setColour(Colours::orange);
-    g.drawRoundedRectangle(responseArea.toFloat(), 4.f, 1.f);
+    g.drawRoundedRectangle(getRenderArea().toFloat(), 4.f, 1.f);
 
     g.setColour(Colours::white);
     g.strokePath(responseCurve, PathStrokeType(2.f));
+}
+
+void ResponseCurveComponent::resized()
+{
+    using namespace juce;
+    background = Image(Image::PixelFormat::RGB, getWidth(), getHeight(), true);
+    Graphics g(background);
+
+    Array<float> freqs{
+        20,50,100,
+        200,500,1000,
+        2000,5000,10000,
+        20000
+    };
+
+    auto renderArea = getAnalysisArea();
+    auto left = renderArea.getX();
+    auto right = renderArea.getRight();
+    auto top = renderArea.getY();
+    auto bottom = renderArea.getBottom();
+    auto width = renderArea.getWidth();
+
+    Array<float> xs;
+
+    
+    for (auto f : freqs)
+    {
+        auto normX = mapFromLog10(f, 20.f, 20000.f);
+        //g.drawVerticalLine(getWidth() * normX, 0.f, getHeight());
+        xs.add(left + width * normX);
+    };
+    g.setColour(Colours::dimgrey);
+    for (auto x : xs)
+    {
+        g.drawVerticalLine(x, top, bottom);
+    }
+
+    Array<float> gain
+    {
+        -24, -12, 0 ,12, 24
+    };
+
+    for (auto gDb : gain)
+    {
+        auto y = jmap(gDb, -24.f, 24.f, float(getHeight()), 0.f);
+        //g.drawHorizontalLine(y, 0, getWidth());
+        g.setColour(gDb == 0.f ? Colour(0u, 172u, 1u) : Colours::darkgrey);
+        g.drawHorizontalLine(y, left, right);
+    }
+
+    //g.drawRect(getAnalysisArea());
+
+    g.setColour(Colours::lightgrey);
+    const int fontHeight = 10;
+    g.setFont(fontHeight);
+
+    for (int i = 0; i < freqs.size(); i++)
+    {
+        auto f = freqs[i];
+        auto x = xs[i];
+
+        bool addK = false;
+        String str;
+        if (f > 999.f)
+        {
+            addK = true;
+            f /= 1000.f;
+        }
+        str << f;
+        if (addK)
+            str << "k";
+        str << "Hz";
+        auto textWidth = g.getCurrentFont().getStringWidth(str);
+
+        Rectangle<int> r;
+        r.setSize(textWidth, fontHeight);
+        r.setCentre(x, 0);
+        r.setY(1);
+
+
+        g.drawFittedText(str, r, juce::Justification::centred, 1);
+    }
+
+    for (auto gDb : gain)
+    {
+        auto y = jmap(gDb, -24.f, 24.f, float(bottom), float(top));
+        String str;
+        if (gDb > 0)
+            str << "+";
+        str << gDb;
+
+        auto textWidth = g.getCurrentFont().getStringWidth(str);
+        Rectangle<int> r;
+        r.setSize(textWidth, fontHeight);
+        r.setX(getWidth() - textWidth);
+        r.setCentre(r.getCentreX(), y);
+
+        g.setColour(gDb == 0.f ? Colour(0u, 172u, 1u) : Colours::lightgrey);
+
+        g.drawFittedText(str, r, juce::Justification::centred, 1);
+
+        str.clear();
+        str << (gDb - 24.f);
+
+        r.setX(1);
+        textWidth = g.getCurrentFont().getStringWidth(str);
+        r.setSize(textWidth, fontHeight);
+        g.setColour(Colours::lightgrey);
+        g.drawFittedText(str, r, juce::Justification::centred, 1);
+
+    }
+
+}
+
+void ResponseCurveComponent::updateChain()
+{
+    auto chainSettings = getChainSettings(audioProcessor.apvts);
+    auto peakCoefficients = makePeakFilter(chainSettings, audioProcessor.getSampleRate());
+    updateCoefficients(monoChain.get<ChainPositions::Peak>().coefficients, peakCoefficients);
+
+    auto lowCutCoefficients = makeLowCutFilter(chainSettings, audioProcessor.getSampleRate());
+    auto highCutCoefficients = makeHighCutFilter(chainSettings, audioProcessor.getSampleRate());
+
+    updateCutFilter(monoChain.get<ChainPositions::LowCut>(), lowCutCoefficients, chainSettings.lowCutSlope);
+    updateCutFilter(monoChain.get<ChainPositions::HighCut>(), highCutCoefficients, chainSettings.highCutSlope);
+}
+
+juce::Rectangle<int> ResponseCurveComponent::getRenderArea()
+{
+    auto bounds = getLocalBounds();
+
+    bounds.removeFromTop(12);
+    bounds.removeFromBottom(2);
+    bounds.removeFromLeft(20);
+    bounds.removeFromRight(20);
+    return bounds;
+}
+
+juce::Rectangle<int> ResponseCurveComponent::getAnalysisArea()
+{
+    auto bounds = getRenderArea();
+    bounds.removeFromTop(4);
+    bounds.removeFromBottom(4);
+    return bounds;
 }
 
 //==============================================================================
@@ -121,7 +260,7 @@ Vsttutorialv2AudioProcessorEditor::Vsttutorialv2AudioProcessorEditor (Vsttutoria
     : AudioProcessorEditor (&p), audioProcessor (p),
     peakFreqSlider(*audioProcessor.apvts.getParameter("PeakFreq"), "Hz"),
     peakGainSlider(*audioProcessor.apvts.getParameter("PeakGain"),  "dB"),
-    PeakQualitySlider(*audioProcessor.apvts.getParameter("PeakQuality"),  ""),
+    peakQualitySlider(*audioProcessor.apvts.getParameter("PeakQuality"),  ""),
     lowCutFreqSlider(*audioProcessor.apvts.getParameter("LowCutFreq"), "Hz"),
     highCutFreqSlider(*audioProcessor.apvts.getParameter("HighCutFreq"),  "Hz"),
     lowCutSlopeSlider(*audioProcessor.apvts.getParameter("HighCutSlope"),  "dB/Oct"),
@@ -130,7 +269,7 @@ Vsttutorialv2AudioProcessorEditor::Vsttutorialv2AudioProcessorEditor (Vsttutoria
     responseCurveComponent(audioProcessor),
     peakFreqSliderAttachment(audioProcessor.apvts, "PeakFreq", peakFreqSlider),
     peakGainSliderAttachment(audioProcessor.apvts, "PeakGain", peakGainSlider),
-    PeakQualitySliderAttachment(audioProcessor.apvts, "PeakQuality", PeakQualitySlider),
+    PeakQualitySliderAttachment(audioProcessor.apvts, "PeakQuality", peakQualitySlider),
     lowCutFreqSliderAttachment(audioProcessor.apvts, "LowCutFreq", lowCutFreqSlider),
     highCutFreqSliderAttachment(audioProcessor.apvts, "HighCutFreq", highCutFreqSlider),
     lowCutSlopeSliderAttachment(audioProcessor.apvts, "HighCutSlope", lowCutSlopeSlider),
@@ -139,11 +278,33 @@ Vsttutorialv2AudioProcessorEditor::Vsttutorialv2AudioProcessorEditor (Vsttutoria
 {
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
+
+    peakFreqSlider.labels.add({0.f, "20Hz"});
+    peakFreqSlider.labels.add({1.f, "20kHz"});
+
+    peakGainSlider.labels.add({ 0.f, "-24dB" });
+    peakGainSlider.labels.add({ 1.f, "-24dB" });
+
+    peakQualitySlider.labels.add({ 0.f, "0.1" });
+    peakQualitySlider.labels.add({ 1.f, "10.0" });
+
+    lowCutFreqSlider.labels.add({ 0.f, "20Hz" });
+    lowCutFreqSlider.labels.add({ 1.f, "20kHz" });
+
+    highCutFreqSlider.labels.add({ 0.f, "20Hz" });
+    highCutFreqSlider.labels.add({ 1.f, "20kHz" });
+
+    lowCutSlopeSlider.labels.add({ 0.f, "12" });
+    lowCutSlopeSlider.labels.add({ 1.f, "48" });
+
+    highCutSlopeSlider.labels.add({ 0.f, "12" });
+    highCutSlopeSlider.labels.add({ 1.f, "48" });
+
     for (auto* comp : getComps())
     {
         addAndMakeVisible(comp);
     }
-    setSize (600, 400);
+    setSize (600, 480);
 }
 
 Vsttutorialv2AudioProcessorEditor::~Vsttutorialv2AudioProcessorEditor()
@@ -154,8 +315,9 @@ Vsttutorialv2AudioProcessorEditor::~Vsttutorialv2AudioProcessorEditor()
 void Vsttutorialv2AudioProcessorEditor::paint (juce::Graphics& g)
 {
     using namespace juce;
+    g.fillAll(Colours::black);
     // (Our component is opaque, so we must completely fill the background with a solid colour)
-    g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+    //g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
 
     
 }
@@ -165,9 +327,12 @@ void Vsttutorialv2AudioProcessorEditor::resized()
     // This is generally where you'll want to lay out the positions of any
     // subcomponents in your editor..
     auto bounds = getLocalBounds();
-    auto responseArea = bounds.removeFromTop(bounds.getHeight() * 0.33);
+    float hRatio = 25.f / 100.f;//JUCE_LIVE_CONSTANT(33) / 100.f;
+    auto responseArea = bounds.removeFromTop(bounds.getHeight() * hRatio);
 
     responseCurveComponent.setBounds(responseArea);
+
+    bounds.removeFromTop(5);
 
     auto lowCutArea = bounds.removeFromLeft(bounds.getWidth() * 0.33);
     auto highCutArea = bounds.removeFromRight(bounds.getWidth() * 0.5);
@@ -180,7 +345,7 @@ void Vsttutorialv2AudioProcessorEditor::resized()
 
     peakFreqSlider.setBounds(bounds.removeFromTop(bounds.getHeight() * 0.33));
     peakGainSlider.setBounds(bounds.removeFromTop(bounds.getHeight() * 0.5));
-    PeakQualitySlider.setBounds(bounds);
+    peakQualitySlider.setBounds(bounds);
 
 }
 
@@ -192,7 +357,7 @@ std::vector<juce::Component*> Vsttutorialv2AudioProcessorEditor::getComps()
     return {
         &peakFreqSlider,
         &peakGainSlider,
-        &PeakQualitySlider,
+        &peakQualitySlider,
         &lowCutFreqSlider,
         &highCutFreqSlider,
         &lowCutSlopeSlider,
@@ -209,19 +374,43 @@ void RotarySliderWithLabels::paint(juce::Graphics& g)
 
     auto range = getRange();
 
-    auto sliderrBounds = getSliderBounds();
+    auto sliderBounds = getSliderBounds();
 
 
     getLookAndFeel().drawRotarySlider(g,
-        sliderrBounds.getX(),
-        sliderrBounds.getY(),
-        sliderrBounds.getWidth(),
-        sliderrBounds.getHeight(),
+        sliderBounds.getX(),
+        sliderBounds.getY(),
+        sliderBounds.getWidth(),
+        sliderBounds.getHeight(),
         jmap(getValue(), range.getStart(), range.getEnd(), 0.0, 1.0),
         startAng,
         endAng,
         *this
     );
+
+    auto center = sliderBounds.toFloat().getCentre();
+    auto radius = sliderBounds.getWidth() * 0.5f;
+
+    g.setColour(Colour(0u, 172u, 1u));
+    g.setFont(getTextHeight());
+
+    auto numChoices = labels.size();
+    for (int i = 0; i < numChoices; i++) 
+    {
+        auto pos = labels[i].pos;
+        jassert(0.f <= pos);
+        jassert(pos <= 1.f);
+        auto ang = jmap(pos, 0.f, 1.f, startAng, endAng);
+        auto c = center.getPointOnCircumference(radius + getTextHeight() * 0.5f + 1, ang);
+
+        Rectangle<float> r;
+        auto str = labels[i].label;
+        r.setSize(g.getCurrentFont().getStringWidth(str), getTextHeight());
+        r.setCentre(c);
+        r.setY(r.getY() + getTextHeight());
+
+        g.drawFittedText(str, r.toNearestInt(), juce::Justification::centred, 1);
+    }
 }
 
 juce::Rectangle<int> RotarySliderWithLabels::getSliderBounds() const
