@@ -144,6 +144,10 @@ void Vsttutorialv2AudioProcessor::prepareToPlay (double sampleRate, int samplesP
     auto& rightHighCut = rightChain.get<ChainPositions::HighCut>();
 
     updateCutFilter(rightHighCut, lowpassCoefs, chainSettings.highCutSlope);
+
+
+    leftChannelFifo.prepare(samplesPerBlock);
+    rightChannelFifo.prepare(samplesPerBlock);
 }
 
 void Vsttutorialv2AudioProcessor::releaseResources()
@@ -222,6 +226,9 @@ void Vsttutorialv2AudioProcessor::processBlock (juce::AudioBuffer<float>& buffer
 
     leftChain.process(leftContext);
     rightChain.process(rightContext);
+
+    leftChannelFifo.update(buffer);
+    rightChannelFifo.update(buffer);
 }
 
 //==============================================================================
