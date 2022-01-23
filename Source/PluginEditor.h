@@ -43,17 +43,7 @@ struct FFTDataGenerator
         //normalize the fft values.
         for (int i = 0; i < numBins; ++i)
         {
-            auto v = fftData[i];
-            //            fftData[i] /= (float) numBins;
-            if (!std::isinf(v) && !std::isnan(v))
-            {
-                v /= float(numBins);
-            }
-            else
-            {
-                v = 0.f;
-            }
-            fftData[i] = v;
+            fftData[i] /= (float)numBins;
         }
 
         //convert them to decibels
@@ -121,14 +111,12 @@ struct AnalyzerPathGenerator
         {
             return juce::jmap(v,
                 negativeInfinity, 0.f,
-                float(bottom + 10), top);
+                float(bottom), top);
         };
 
         auto y = map(renderData[0]);
 
-        //        jassert( !std::isnan(y) && !std::isinf(y) );
-        if (std::isnan(y) || std::isinf(y))
-            y = bottom;
+        jassert(!std::isnan(y) && !std::isinf(y));
 
         p.startNewSubPath(0, y);
 
@@ -138,7 +126,7 @@ struct AnalyzerPathGenerator
         {
             y = map(renderData[binNum]);
 
-            //            jassert( !std::isnan(y) && !std::isinf(y) );
+            jassert(!std::isnan(y) && !std::isinf(y));
 
             if (!std::isnan(y) && !std::isinf(y))
             {

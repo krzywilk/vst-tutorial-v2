@@ -150,11 +150,10 @@ void ResponseCurveComponent::paint(juce::Graphics& g)
         return jmap(input, -24.0, 24.0, outputMin, outputMax);
     };
     responseCurve.startNewSubPath(responseArea.getX(), map(mags.front()));
-    for (size_t i = 1; i < mags.size(); i++)
+    for (size_t i = 1; i < mags.size(); ++i)
         responseCurve.lineTo(responseArea.getX() + i, map(mags[i]));
 
-    //leftChannelFFTPath.applyTransform(AffineTransform().translation(responseArea.getX(), responseArea.getY()));
-
+    leftChannelFFTPath.applyTransform(AffineTransform().translation(responseArea.getX(), responseArea.getY()));
 
     g.setColour(Colours::skyblue);
     g.strokePath(leftChannelFFTPath, PathStrokeType(1.f));
@@ -208,13 +207,13 @@ void ResponseCurveComponent::resized()
 
     for (auto gDb : gain)
     {
-        auto y = jmap(gDb, -24.f, 24.f, float(getHeight()), 0.f);
+        auto y = jmap(gDb, -24.f, 24.f, float(bottom), float(top));
         //g.drawHorizontalLine(y, 0, getWidth());
         g.setColour(gDb == 0.f ? Colour(0u, 172u, 1u) : Colours::darkgrey);
         g.drawHorizontalLine(y, left, right);
     }
 
-    //g.drawRect(getAnalysisArea());
+    g.drawRect(getAnalysisArea());
 
     g.setColour(Colours::lightgrey);
     const int fontHeight = 10;
@@ -359,7 +358,7 @@ Vsttutorialv2AudioProcessorEditor::Vsttutorialv2AudioProcessorEditor (Vsttutoria
     {
         addAndMakeVisible(comp);
     }
-    setSize(480, 500);
+    setSize(600, 480);
 }
 
 Vsttutorialv2AudioProcessorEditor::~Vsttutorialv2AudioProcessorEditor()
